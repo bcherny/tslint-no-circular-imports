@@ -1,0 +1,21 @@
+{
+  "name": "tslint-no-circular-imports",
+  "version": "0.0.1",
+  "description": "TSLint plugin to detect and warn about cicular imports",
+  "main": "noCircularImportsRule.js",
+  "scripts": {
+    "build": "npm run build-sources && npm test",
+    "build-sources": "tsc -p ./tsconfig.json",
+    "build-tests": "rm -rf ./dist_tests && tsc -p ./tsconfig.test.json",
+    "watch": "tsc -p ./tsconfig.json -w & tsc -p ./tsconfig.test.json -w",
+    "test": "node ./test/test.js",
+    "prepublish": "npm run build"
+  },
+  "author": "Boris Cherny <boris@performancejs.com> (http://performancejs.com/)",
+  "license": "MIT",
+  "dependencies": {
+    "@types/node": "^6.0.47",
+    "tslint": "^3.15.1",
+    "typescript": "^2.0.9"
+  }
+}

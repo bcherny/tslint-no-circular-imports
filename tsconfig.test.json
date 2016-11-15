@@ -1,0 +1,24 @@
+{
+  "compilerOptions": {
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "noImplicitAny": true,
+    "preserveConstEnums": true,
+    "declaration": false,
+    "sourceMap": true,
+    "target": "es6",
+    "lib": [
+      "es2015"
+    ],
+    "strictNullChecks": true,
+    "types": [
+      "node"
+    ]
+  },
+  "files": [
+    "test/test.ts",
+    "test/case1.ts",
+    "test/case1.1.ts",
+    "test/case1.2.ts"
+  ]
+}
