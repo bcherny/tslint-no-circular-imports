@@ -4,7 +4,7 @@
 [npm]: https://img.shields.io/npm/v/tslint-no-circular-imports.svg?style=flat-square
 [mit]: https://img.shields.io/npm/l/tslint-no-circular-imports.svg?style=flat-square
 
-> [TSLint](https://palantir.github.io/tslint/) plugin to detect and warn about cicular imports
+> [TSLint](https://palantir.github.io/tslint/) plugin to detect and warn about circular imports
 
 ## Installation
 
@@ -20,6 +20,14 @@ Add the following to your tslint.json:
 {
   "extends": ["tslint-no-circular-imports"]
 }
+```
+
+Run TSLint:
+
+```sh
+$ tslint .
+Circular import detected: foo.ts -> bar.ts -> foo.ts
+Circular import detected: baz.ts -> bar.ts -> baz.ts
 ```
 
 ## Running the tests
