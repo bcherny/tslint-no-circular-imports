@@ -1,8 +1,9 @@
+import { basename } from 'path'
 import * as ts from 'typescript'
 import * as Lint from 'tslint/lib/lint'
 
 export class Rule extends Lint.Rules.AbstractRule {
-  static FAILURE_STRING = 'circular import detected'
+  static FAILURE_STRING = 'Circular import detected'
 
   static metadata: Lint.IRuleMetadata = {
     ruleName: 'no-circular-imports',
@@ -37,7 +38,11 @@ class NoCircularImportsWalker extends Lint.RuleWalker {
 
     // check for cycles
     if (this.hasCycle(thisModuleName)) {
-      this.addFailure(this.createFailure(node.getStart(), node.getWidth(), Rule.FAILURE_STRING))
+      this.addFailure(
+        this.createFailure(node.getStart(), node.getWidth(), `${Rule.FAILURE_STRING}: ${
+          this.getCycle(thisModuleName).concat(thisModuleName).map(_ => basename(_)).join(' -> ')
+        }`)
+      )
     }
 
     super.visitImportDeclaration(node)
@@ -53,12 +58,17 @@ class NoCircularImportsWalker extends Lint.RuleWalker {
     imports.get(thisModuleName)!.add(importCanonicalName)
   }
 
-  private hasCycle(moduleName: string, accumulator: string[] = []): boolean {
-    if (!imports.get(moduleName)) return false
-    if (accumulator.includes(moduleName)) return true
-    return Array.from(imports.get(moduleName)!.values()).some(_ =>
-      this.hasCycle(_, accumulator.concat(moduleName))
-    )
+  private hasCycle(moduleName: string): boolean {
+    return this.getCycle(moduleName).length > 0
+  }
+
+  private getCycle(moduleName: string, accumulator: string[] = []): string[] {
+    if (!imports.get(moduleName)) return []
+    if (accumulator.includes(moduleName)) return accumulator
+    return Array.from(imports.get(moduleName) !.values()).reduce((_prev, _) => {
+      const c = this.getCycle(_, accumulator.concat(moduleName))
+      return c.length ? c : []
+    }, [] as string[])
   }
 
 }

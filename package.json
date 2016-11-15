@@ -1,8 +1,8 @@
 {
   "name": "tslint-no-circular-imports",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "TSLint plugin to detect and warn about cicular imports",
-  "main": "noCircularImportsRule.js",
+  "main": "./tslint-no-circular-imports.json",
   "scripts": {
     "build": "npm run build-sources && npm test",
     "build-sources": "tsc -p ./tsconfig.json",

@@ -18,10 +18,7 @@ Add the following to your tslint.json:
 
 ```json
 {
-  "rulesDirectory": "node_modules/tslint-no-circular-imports",
-  "rules": {
-    "no-circular-imports": true
-  }
+  "extends": ["tslint-no-circular-imports"]
 }
 ```
 
