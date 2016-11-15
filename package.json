@@ -1,6 +1,6 @@
 {
   "name": "tslint-no-circular-imports",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "description": "TSLint plugin to detect and warn about cicular imports",
   "main": "tslint-no-circular-imports.json",
   "scripts": {
