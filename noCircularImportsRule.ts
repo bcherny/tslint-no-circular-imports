@@ -1,12 +1,14 @@
 import * as ts from 'typescript'
-import * as Lint from 'tslint/lib/lint'
-import { readFile } from 'fs-promise'
+import * as Lint from 'tslint'
+import { readFileSync } from 'fs'
 import { basename, dirname, extname, resolve } from 'path'
+import { IRuleMetadata } from 'tslint/lib/language/rule/rule'
+import { TypedRule } from 'tslint/lib/language/rule/typedRule'
 
-export class Rule extends Lint.Rules.AbstractRule {
+export class Rule extends TypedRule {
   static FAILURE_STRING = 'Circular import detected'
 
-  static metadata: Lint.IRuleMetadata = {
+  static metadata: IRuleMetadata = {
     ruleName: 'no-circular-imports',
     description: 'Disallows circular imports.',
     rationale: Lint.Utils.dedent`
@@ -14,15 +16,26 @@ export class Rule extends Lint.Rules.AbstractRule {
     optionsDescription: 'Not configurable.',
     options: null,
     optionExamples: ['true'],
-    type: 'functionality'
+    type: 'functionality',
+    requiresTypeInfo: true,
+    typescriptOnly: true
   }
 
-  apply(sourceFile: ts.SourceFile): Lint.RuleFailure[] {
-    return this.applyWithWalker(new NoCircularImportsWalker(sourceFile, this.getOptions()))
+  applyWithProgram(sourceFile: ts.SourceFile, program: ts.Program): Lint.RuleFailure[] {
+    return this.applyWithWalker(new NoCircularImportsWalker(sourceFile, this.getOptions(), program))
   }
 }
 
-class NoCircularImportsWalker extends Lint.RuleWalker {
+Rule.prototype.constructor = TypedRule
+
+class NoCircularImportsWalker extends Lint.ProgramAwareRuleWalker {
+
+  protected _program: ts.Program
+
+  constructor(sourceFile: ts.SourceFile, options: Lint.IOptions, program: ts.Program) {
+    super(sourceFile, options, program)
+    this._program = program
+  }
 
   async visitImportDeclaration(node: ts.ImportDeclaration) {
 
@@ -64,6 +77,7 @@ class NoCircularImportsWalker extends Lint.RuleWalker {
   ): Promise<boolean> {
     const fullFileName = resolve(baseDir, fileName)
     const importedFileImports = await this.getImports(fullFileName)
+    console.log('hasCircularImport', fileName, baseDir, fullFileName, importedFileImports)
     importedFileImports.forEach(_ =>
       this.addToGraph(dependencyGraph, fullFileName, resolve(baseDir, _))
     )
@@ -78,9 +92,20 @@ class NoCircularImportsWalker extends Lint.RuleWalker {
   }
 
   private async getImports(fileName: string): Promise<string[]> {
-    const importedFileContents = await readFile(fileName + '.ts', 'utf-8') // TODO: handle .tsx
-    const importedFileNode = ts.preProcessFile(importedFileContents, true, true)
-    return importedFileNode.importedFiles.map(_ => _.fileName)
+    return new Promise<string[]>((resolve, reject) => {
+      try {
+        const options = this._program.getCompilerOptions()
+        ts.resolveModuleName(fileName, fileName, options, TODO)
+        const importedFileContents = readFileSync(fileName + '.ts', 'utf-8')
+
+        console.log('getImports', fileName)
+        const importedFileNode = ts.preProcessFile(importedFileContents, true, true)
+        resolve(importedFileNode.importedFiles.map(_ => _.fileName))
+      } catch (err) {
+        console.log('err', err)
+          reject(err)
+      } // TODO: handle .tsx
+    })
   }
 
   /**
