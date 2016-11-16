@@ -27,14 +27,9 @@ class NoCircularImportsWalker extends Lint.RuleWalker {
   async visitImportDeclaration(node: ts.ImportDeclaration) {
 
     const parent = node.parent as ts.SourceFile
-    // const importPath = (node.moduleSpecifier as any).text as string
-    // const importModule = (parent as any).resolvedModules[importPath]
-    // const importCanonicalName = importModule.resolvedFileName as string
-
-    // const isDirectImport = (fileName: string) => !((parent as any).resolvedModules[fileName] && (parent as any).resolvedModules[fileName].isExternalLibraryImport)
 
     const thisModuleFileName = parent.fileName
-    const fullThisModuleFileName = this.stripExt(resolve(thisModuleFileName))
+    const fullThisModuleFileName = stripExt(resolve(thisModuleFileName))
     const importedFileName = (node.moduleSpecifier as any).text as string
 
     // this->A
@@ -62,17 +57,12 @@ class NoCircularImportsWalker extends Lint.RuleWalker {
       .join(' -> ')
   }
 
-  private stripExt(fileName: string): string {
-    return fileName.replace(extname(fileName), '')
-  }
-
   private async hasCircularImport(
     fileName: string,
     baseDir: string,
     dependencyGraph: Map<string, Set<string>>
   ): Promise<boolean> {
     const fullFileName = resolve(baseDir, fileName)
-    // console.log('hasCircularImport', fileName, baseDir, fullFileName, dependencyGraph)
     const importedFileImports = await this.getImports(fullFileName)
     importedFileImports.forEach(_ =>
       this.addToGraph(dependencyGraph, fullFileName, resolve(baseDir, _))
@@ -84,7 +74,7 @@ class NoCircularImportsWalker extends Lint.RuleWalker {
 
     return importedFileImports.reduce((_p, _) =>
       this.hasCircularImport(_, baseDir, dependencyGraph)
-    , false)
+    , Promise.resolve(false))
   }
 
   private async getImports(fileName: string): Promise<string[]> {
@@ -118,4 +108,8 @@ class NoCircularImportsWalker extends Lint.RuleWalker {
     }, [] as string[])
   }
 
+}
+
+function stripExt(fileName: string): string {
+  return fileName.replace(extname(fileName), '')
 }
