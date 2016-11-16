@@ -19,6 +19,7 @@
   },
   "dependencies": {
     "@types/node": "^6.0.47",
+    "fs-promise": "^1.0.0",
     "tslint": "^3.15.1",
     "typescript": "^2.0.9"
   }
