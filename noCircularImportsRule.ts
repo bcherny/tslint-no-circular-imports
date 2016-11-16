@@ -1,7 +1,7 @@
 import * as ts from 'typescript'
 import * as Lint from 'tslint/lib/lint'
 import { readFile } from 'fs-promise'
-import { basename, resolve } from 'path'
+import { basename, dirname, extname, resolve } from 'path'
 
 export class Rule extends Lint.Rules.AbstractRule {
   static FAILURE_STRING = 'Circular import detected'
@@ -27,64 +27,95 @@ class NoCircularImportsWalker extends Lint.RuleWalker {
   async visitImportDeclaration(node: ts.ImportDeclaration) {
 
     const parent = node.parent as ts.SourceFile
-    const importPath = (node.moduleSpecifier as any).text as string
-    const importModule = (parent as any).resolvedModules[importPath]
-    const importCanonicalName = importModule.resolvedFileName as string
+    // const importPath = (node.moduleSpecifier as any).text as string
+    // const importModule = (parent as any).resolvedModules[importPath]
+    // const importCanonicalName = importModule.resolvedFileName as string
+
+    // const isDirectImport = (fileName: string) => !((parent as any).resolvedModules[fileName] && (parent as any).resolvedModules[fileName].isExternalLibraryImport)
 
     const thisModuleFileName = parent.fileName
+    const fullThisModuleFileName = this.stripExt(resolve(thisModuleFileName))
     const importedFileName = (node.moduleSpecifier as any).text as string
-    const fullImportedFileName = resolve(thisModuleFileName, importedFileName)
-    const importedFileNode = await this.getImports(fullImportedFileName)
 
-    console.log('imports', importedFileNode.importedFiles)
+    // this->A
+    const dependencyGraph = new Map<string, Set<string>>()
+    this.addToGraph(dependencyGraph, fullThisModuleFileName, importedFileName)
 
-
-    debugger
-
-
-    // add to import graph
-    // this.addToGraph(thisModuleFileName, importCanonicalName)
-
-    // check for cycles
-    // if (this.hasCycle(thisModuleName)) {
-    //   this.addFailure(
-    //     this.createFailure(node.getStart(), node.getWidth(), `${Rule.FAILURE_STRING}: ${
-    //       this.getCycle(thisModuleName).concat(thisModuleName).map(_ => basename(_)).join(' -> ')
-    //     }`)
-    //   )
-    // }
+    // A->B, A->C, ..., A->n
+    if (await this.hasCircularImport(importedFileName, dirname(thisModuleFileName), dependencyGraph)) {
+      console.log('fail!', this.prettyCycle(fullThisModuleFileName, dependencyGraph))
+      this.addFailure(
+        this.createFailure(node.getStart(), node.getWidth(), `${Rule.FAILURE_STRING}: ${
+          this.prettyCycle(fullThisModuleFileName, dependencyGraph)
+        }`)
+      )
+    }
 
     super.visitImportDeclaration(node)
   }
 
+  private prettyCycle(fullThisModuleFileName: string, dependencyGraph: Map<string, Set<string>>) {
+    return this
+      .getCycle(fullThisModuleFileName, dependencyGraph)
+      .concat(fullThisModuleFileName)
+      .map(_ => basename(_))
+      .join(' -> ')
+  }
+
+  private stripExt(fileName: string): string {
+    return fileName.replace(extname(fileName), '')
+  }
+
+  private async hasCircularImport(
+    fileName: string,
+    baseDir: string,
+    dependencyGraph: Map<string, Set<string>>
+  ): Promise<boolean> {
+    const fullFileName = resolve(baseDir, fileName)
+    // console.log('hasCircularImport', fileName, baseDir, fullFileName, dependencyGraph)
+    const importedFileImports = await this.getImports(fullFileName)
+    importedFileImports.forEach(_ =>
+      this.addToGraph(dependencyGraph, fullFileName, resolve(baseDir, _))
+    )
+
+    if (this.hasCycle(dependencyGraph)) {
+      return true
+    }
+
+    return importedFileImports.reduce((_p, _) =>
+      this.hasCircularImport(_, baseDir, dependencyGraph)
+    , false)
+  }
+
   private async getImports(fileName: string): Promise<string[]> {
-    const importedFileContents = await readFile(fileName, 'utf-8')
+    const importedFileContents = await readFile(fileName + '.ts', 'utf-8') // TODO: handle .tsx
     const importedFileNode = ts.preProcessFile(importedFileContents, true, true)
-    console.log('importedFileNode', importedFileNode)
-    return []
+    return importedFileNode.importedFiles.map(_ => _.fileName)
   }
 
   /**
    * TODO: don't rely on import name
    */
-  // private addToGraph(thisModuleName: string, importCanonicalName: string) {
-  //   if (!imports.get(thisModuleName)) {
-  //     imports.set(thisModuleName, new Set)
-  //   }
-  //   imports.get(thisModuleName)!.add(importCanonicalName)
-  // }
+  private addToGraph(dependencyGraph: Map<string, Set<string>>, thisModuleName: string, importCanonicalName: string) {
+    if (!dependencyGraph.get(thisModuleName)) {
+      dependencyGraph.set(thisModuleName, new Set)
+    }
+    dependencyGraph.get(thisModuleName)!.add(importCanonicalName)
+  }
 
-  // private hasCycle(moduleName: string): boolean {
-  //   return this.getCycle(moduleName).length > 0
-  // }
+  private hasCycle(dependencyGraph: Map<string, Set<string>>): boolean {
+    return Array.from(dependencyGraph.keys()).some(_ =>
+      this.getCycle(_, dependencyGraph).length > 0
+    )
+  }
 
-  // private getCycle(moduleName: string, accumulator: string[] = []): string[] {
-  //   if (!imports.get(moduleName)) return []
-  //   if (accumulator.includes(moduleName)) return accumulator
-  //   return Array.from(imports.get(moduleName) !.values()).reduce((_prev, _) => {
-  //     const c = this.getCycle(_, accumulator.concat(moduleName))
-  //     return c.length ? c : []
-  //   }, [] as string[])
-  // }
+  private getCycle(moduleName: string, dependencyGraph: Map<string, Set<string>>, accumulator: string[] = []): string[] {
+    if (!dependencyGraph.get(moduleName)) return []
+    if (accumulator.includes(moduleName)) return accumulator
+    return Array.from(dependencyGraph.get(moduleName)!.values()).reduce((_prev, _) => {
+      const c = this.getCycle(_, dependencyGraph, accumulator.concat(moduleName))
+      return c.length ? c : []
+    }, [] as string[])
+  }
 
 }
