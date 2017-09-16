@@ -9,6 +9,10 @@
 ## Installation
 
 ```sh
+# Using Yarn:
+yarn add --dev tslint-no-circular-imports
+
+# Or, using NPM:
 npm install --save-dev tslint-no-circular-imports
 ```
 
