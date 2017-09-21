@@ -42,7 +42,9 @@ class NoCircularImportsWalker extends Lint.RuleWalker {
     // TODO: does TSLint expose an API for this? it would be nice to use TSC's
     // resolveModuleNames to avoid doing this ourselves, and get support for
     // roots defined in tsconfig.json.
-    const resolvedImportFileName = resolve(dirname(thisFileName), importFileName + '.ts')
+    const resolvedImportFileName = isImportFromNPMPackage(importFileName)
+      ? importFileName
+      : resolve(dirname(thisFileName), importFileName + '.ts')
 
     // add to import graph
     this.addToGraph(resolvedThisFileName, resolvedImportFileName)
@@ -82,4 +84,8 @@ class NoCircularImportsWalker extends Lint.RuleWalker {
     }, [] as string[])
   }
 
+}
+
+function isImportFromNPMPackage(filename: string) {
+  return !(filename.startsWith('.') || filename.startsWith('/') || filename.startsWith('~'))
 }
