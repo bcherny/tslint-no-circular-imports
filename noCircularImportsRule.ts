@@ -28,9 +28,32 @@ const imports = new Map<string, Set<string>>()
 
 class NoCircularImportsWalker extends Lint.RuleWalker {
 
-  visitImportDeclaration(node: ts.ImportDeclaration) {
+  visitNode(node: ts.Node) {
+    // export declarations seem to be missing from the current SyntaxWalker
+    if(ts.isExportDeclaration(node)) {
+      this.visitExportDeclaration(node)
+      this.walkChildren(node)
+    }
+    else {
+      super.visitNode(node)
+    }
 
+  }
+
+  visitExportDeclaration(node: ts.ExportDeclaration) {
+    this.visitImportOrExportDeclaration(node)
+  }
+
+  visitImportDeclaration(node: ts.ImportDeclaration) {
+    this.visitImportOrExportDeclaration(node)
+    super.visitImportDeclaration(node)
+  }
+
+  visitImportOrExportDeclaration(node: ts.ImportDeclaration | ts.ExportDeclaration) {
     if (!node.parent || !ts.isSourceFile(node.parent)) {
+      return
+    }
+    if(!node.moduleSpecifier) {
       return
     }
     const thisFileName = node.parent.fileName
@@ -59,8 +82,6 @@ class NoCircularImportsWalker extends Lint.RuleWalker {
         }`)
       )
     }
-
-    super.visitImportDeclaration(node)
   }
 
   /**
