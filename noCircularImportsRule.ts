@@ -50,10 +50,10 @@ class NoCircularImportsWalker extends Lint.RuleWalker {
     this.addToGraph(resolvedThisFileName, resolvedImportFileName)
 
     // check for cycles
-    if (this.hasCycle(resolvedThisFileName)) {
+    if (this.hasCycle(resolvedThisFileName, resolvedImportFileName)) {
       this.addFailure(
         this.createFailure(node.getStart(), node.getWidth(), `${Rule.FAILURE_STRING}: ${
-          this.getCycle(resolvedThisFileName).concat(resolvedThisFileName).map(_ => basename(_)).join(' -> ')
+          this.getCycle(resolvedThisFileName, resolvedImportFileName).concat(resolvedThisFileName).map(_ => basename(_)).join(' -> ')
         }`)
       )
     }
@@ -71,17 +71,26 @@ class NoCircularImportsWalker extends Lint.RuleWalker {
     imports.get(thisFileName)!.add(importCanonicalName)
   }
 
-  private hasCycle(moduleName: string): boolean {
-    return this.getCycle(moduleName).length > 0
+  private hasCycle(moduleName: string, startFromImportName: string): boolean {
+    return this.getCycle(moduleName, startFromImportName).length > 0
   }
 
-  private getCycle(moduleName: string, accumulator: string[] = []): string[] {
+  private getCycle(moduleName: string, startFromImportName?: string | undefined, accumulator: string[] = []): string[] {
     if (!imports.get(moduleName)) return []
     if (accumulator.indexOf(moduleName) !== -1) return accumulator
-    return Array.from(imports.get(moduleName) !.values()).reduce((_prev, _) => {
-      const c = this.getCycle(_, accumulator.concat(moduleName))
-      return c.length ? c : []
-    }, [] as string[])
+
+    if(startFromImportName !== undefined && imports.has(startFromImportName)) {
+      const c = this.getCycle(startFromImportName, undefined, accumulator.concat(moduleName))
+      if(c.length) return c
+    }
+    else {
+      for(const imp of Array.from(imports.get(moduleName) !.values())) {
+        const c = this.getCycle(imp, undefined, accumulator.concat(moduleName))
+        if(c.length) return c
+      }
+    }
+
+    return []
   }
 
 }
