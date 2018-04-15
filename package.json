@@ -20,11 +20,13 @@
     "type": "git",
     "url": "git+https://github.com/bcherny/tslint-no-circular-imports.git"
   },
-  "dependencies": {
-    "tslint": "^5.7.0",
-    "typescript": "^2.5.2"
+  "peerDependencies": {
+    "tslint": ">=5.0.0",
+    "typescript": ">=2.1.0"
   },
   "devDependencies": {
-    "@types/node": "^4.2.23"
+    "@types/node": "^4.2.23",
+    "tslint": "^5.7.0",
+    "typescript": "^2.5.2"
   }
 }
