@@ -78,10 +78,13 @@ class NoCircularImportsWalker extends Lint.RuleWalker {
   private getCycle(moduleName: string, accumulator: string[] = []): string[] {
     if (!imports.get(moduleName)) return []
     if (accumulator.indexOf(moduleName) !== -1) return accumulator
-    return Array.from(imports.get(moduleName) !.values()).reduce((_prev, _) => {
-      const c = this.getCycle(_, accumulator.concat(moduleName))
-      return c.length ? c : []
-    }, [] as string[])
+
+    for(const imp of Array.from(imports.get(moduleName) !.values())) {
+      const c = this.getCycle(imp, accumulator.concat(moduleName))
+      if(c.length) return c
+    }
+
+    return []
   }
 
 }
