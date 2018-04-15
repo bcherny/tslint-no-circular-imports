@@ -27,3 +27,5 @@ function lintFile(fileName: string, content: string) {
 
 assert.equal(lintFile('./a.ts', 'import "./b"\nimport "./c"').errorCount, 0)
 assert.equal(lintFile('./b.ts', 'import "./a"').errorCount, 1)
+assert.equal(lintFile('./b.ts', '').errorCount, 0)
+assert.equal(lintFile('./a.ts', 'import "./b"').errorCount, 0)
