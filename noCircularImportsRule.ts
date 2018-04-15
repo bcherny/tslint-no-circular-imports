@@ -18,6 +18,8 @@ export class Rule extends Lint.Rules.AbstractRule {
   }
 
   apply(sourceFile: ts.SourceFile): Lint.RuleFailure[] {
+    const resolvedFile = resolve(sourceFile.fileName)
+    imports.delete(resolvedFile)
     return this.applyWithWalker(new NoCircularImportsWalker(sourceFile, this.getOptions()))
   }
 }
