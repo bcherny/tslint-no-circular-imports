@@ -1,8 +1,9 @@
-import { basename, resolve, dirname } from 'path'
-import * as ts from 'typescript'
-import * as Lint from 'tslint'
+import { relative, sep } from 'path';
+import * as Lint from 'tslint';
+import { IOptions } from 'tslint/lib/language/rule/rule';
+import * as ts from 'typescript';
 
-export class Rule extends Lint.Rules.AbstractRule {
+export class Rule extends Lint.Rules.TypedRule {
   static FAILURE_STRING = 'circular import detected'
 
   static metadata: Lint.IRuleMetadata = {
@@ -17,20 +18,30 @@ export class Rule extends Lint.Rules.AbstractRule {
     typescriptOnly: false
   }
 
-  apply(sourceFile: ts.SourceFile): Lint.RuleFailure[] {
-    const resolvedFile = resolve(sourceFile.fileName)
+  applyWithProgram(sourceFile: ts.SourceFile, program: ts.Program): Lint.RuleFailure[] {
+    const resolvedFile = sourceFile.fileName
     imports.delete(resolvedFile)
-    return this.applyWithWalker(new NoCircularImportsWalker(sourceFile, this.getOptions()))
+
+    const walker = new NoCircularImportsWalker(sourceFile, this.getOptions(), program)
+
+    return this.applyWithWalker(walker)
   }
 }
 
+// Graph of imports.
 const imports = new Map<string, Set<string>>()
+// Keep a list of found circular dependencies to avoid showing them twice.
+const found = new Set<string>()
+const nodeModulesRe = new RegExp(`\\${sep}node_modules\\${sep}`)
 
 class NoCircularImportsWalker extends Lint.RuleWalker {
+  constructor(sourceFile: ts.SourceFile, options: IOptions, private program: ts.Program) {
+    super(sourceFile, options)
+  }
 
   visitNode(node: ts.Node) {
     // export declarations seem to be missing from the current SyntaxWalker
-    if(ts.isExportDeclaration(node)) {
+    if (ts.isExportDeclaration(node)) {
       this.visitExportDeclaration(node)
       this.walkChildren(node)
     }
@@ -56,50 +67,64 @@ class NoCircularImportsWalker extends Lint.RuleWalker {
     if(!node.moduleSpecifier) {
       return
     }
-    const thisFileName = node.parent.fileName
-    const resolvedThisFileName = resolve(thisFileName)
+    const fileName = node.parent.fileName
 
     if (!ts.isStringLiteral(node.moduleSpecifier)) {
       return
     }
     const importFileName = node.moduleSpecifier.text
+    const compilerOptions = this.program.getCompilerOptions()
 
-    // TODO: does TSLint expose an API for this? it would be nice to use TSC's
-    // resolveModuleNames to avoid doing this ourselves, and get support for
-    // roots defined in tsconfig.json.
-    const resolvedImportFileName = isImportFromNPMPackage(importFileName)
-      ? importFileName
-      : resolve(dirname(thisFileName), importFileName + '.ts')
+    const resolved = ts.resolveModuleName(importFileName, fileName, compilerOptions, ts.sys)
+    if (!resolved || !resolved.resolvedModule) {
+      return
+    }
+    const resolvedImportFileName = resolved.resolvedModule.resolvedFileName
 
-    // add to import graph
-    this.addToGraph(resolvedThisFileName, resolvedImportFileName)
+    // Skip node modules entirely. We use this after resolution to support path mapping in the
+    // tsconfig.json (which could override imports from/to node_modules).
+    if (nodeModulesRe.test(resolvedImportFileName)) {
+      return
+    }
 
-    // check for cycles
-    if (this.hasCycle(resolvedThisFileName, resolvedImportFileName)) {
-      this.addFailure(
-        this.createFailure(node.getStart(), node.getWidth(), `${Rule.FAILURE_STRING}: ${
-          this.getCycle(resolvedThisFileName, resolvedImportFileName).concat(resolvedThisFileName).map(_ => basename(_)).join(' -> ')
+    this.addToGraph(fileName, resolvedImportFileName)
+
+    // Check for cycles, remove any cycles that have been found already (otherwise we'll report
+    // false positive on every files that import from the real cycles, and users will be driven
+    // mad).
+    const maybeCycle = this.getCycle(fileName, resolvedImportFileName)
+    if (maybeCycle.length > 0) {
+      // Slice the array so we don't match this file twice.
+      if (maybeCycle.slice(1).some(fn => found.has(fn))) {
+        return
+      }
+
+      maybeCycle.forEach(x => found.add(x))
+
+      this.addFailureAt(
+        node.getStart(),
+        node.getWidth(),
+        `${Rule.FAILURE_STRING}: ${
+          maybeCycle
+            .concat(fileName)
+            // Show relative to baseUrl (or the tsconfig path itself).
+            .map(x => relative(compilerOptions.rootDir || process.cwd(), x))
+            .join(' -> ')
         }`)
-      )
     }
   }
 
-  /**
-   * TODO: don't rely on import name
-   */
   private addToGraph(thisFileName: string, importCanonicalName: string) {
-    if (!imports.get(thisFileName)) {
-      imports.set(thisFileName, new Set)
+    let i = imports.get(thisFileName)
+    if (!i) {
+      imports.set(thisFileName, i = new Set)
     }
-    imports.get(thisFileName)!.add(importCanonicalName)
-  }
-
-  private hasCycle(moduleName: string, startFromImportName: string): boolean {
-    return this.getCycle(moduleName, startFromImportName).length > 0
+    i.add(importCanonicalName)
   }
 
   private getCycle(moduleName: string, startFromImportName?: string | undefined, accumulator: string[] = []): string[] {
-    if (!imports.get(moduleName)) return []
+    const moduleImport = imports.get(moduleName)
+    if (!moduleImport) return []
     if (accumulator.indexOf(moduleName) !== -1) return accumulator
 
     if(startFromImportName !== undefined && imports.has(startFromImportName)) {
@@ -107,7 +132,7 @@ class NoCircularImportsWalker extends Lint.RuleWalker {
       if(c.length) return c
     }
     else {
-      for(const imp of Array.from(imports.get(moduleName) !.values())) {
+      for (const imp of Array.from(moduleImport.values())) {
         const c = this.getCycle(imp, undefined, accumulator.concat(moduleName))
         if(c.length) return c
       }
@@ -115,9 +140,4 @@ class NoCircularImportsWalker extends Lint.RuleWalker {
 
     return []
   }
-
-}
-
-function isImportFromNPMPackage(filename: string) {
-  return !(filename.startsWith('.') || filename.startsWith('/') || filename.startsWith('~'))
 }
