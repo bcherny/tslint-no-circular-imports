@@ -11,7 +11,7 @@
     "lint": "tslint -p . ./noCircularImportsRule.ts",
     "prepublishOnly": "npm run build",
     "pretest": "npm run build",
-    "test": "npm run build-tests && node test/test.js",
+    "test": "npm run build-tests && mocha",
     "watch": "tsc -p tsconfig.json -w & tsc -p tsconfig.test.json -w"
   },
   "author": "Boris Cherny <boris@performancejs.com> (http://performancejs.com/)",
@@ -26,6 +26,8 @@
   },
   "devDependencies": {
     "@types/node": "^10.7.1",
+    "@types/mocha": "^5.2.0",
+    "mocha": "^5.2.0",
     "tslint": "^5.11.0",
     "typescript": "^3.0.1"
   }
