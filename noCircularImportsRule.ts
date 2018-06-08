@@ -29,7 +29,7 @@ export class Rule extends Lint.Rules.TypedRule {
 }
 
 // Graph of imports.
-const imports = new Map<string, Set<string>>()
+const imports = new Map<string, Map<string, ts.Node>>()
 // Keep a list of found circular dependencies to avoid showing them twice.
 const found = new Set<string>()
 const nodeModulesRe = new RegExp(`\\${sep}node_modules\\${sep}`)
@@ -39,25 +39,43 @@ class NoCircularImportsWalker extends Lint.RuleWalker {
     super(sourceFile, options)
   }
 
-  visitNode(node: ts.Node) {
-    // export declarations seem to be missing from the current SyntaxWalker
-    if (ts.isExportDeclaration(node)) {
-      this.visitExportDeclaration(node)
-      this.walkChildren(node)
+  visitSourceFile(sourceFile: ts.SourceFile) {
+    // Instead of visiting all children, this is faster. We know imports are statements anyway.
+    sourceFile.statements.forEach(statement => {
+      // export declarations seem to be missing from the current SyntaxWalker
+      if (ts.isExportDeclaration(statement)) {
+          this.visitImportOrExportDeclaration(statement)
+      }
+      else if (ts.isImportDeclaration(statement)) {
+          this.visitImportOrExportDeclaration(statement)
+      }
+    })
+
+    const fileName = sourceFile.fileName
+
+    // Check for cycles, remove any cycles that have been found already (otherwise we'll report
+    // false positive on every files that import from the real cycles, and users will be driven
+    // mad).
+    // The checkCycle is many order of magnitude faster than getCycle, but does not keep a history
+    // of the cycle itself. Only get the full cycle if we found one.
+    if (this.checkCycle(fileName)) {
+      const allCycles = this.getAllCycles(fileName)
+
+      for (const maybeCycle of allCycles) {
+        // Slice the array so we don't match this file twice.
+        if (maybeCycle.slice(1, -1).some(fileName => found.has(fileName))) {
+            continue
+        }
+        maybeCycle.forEach(x => found.add(x))
+        const node = imports.get(fileName) !.get(maybeCycle[1]) !
+
+        const compilerOptions = this.program.getCompilerOptions()
+        this.addFailureAt(node.getStart(), node.getWidth(), Rule.FAILURE_STRING + ": " + maybeCycle
+            .concat(fileName)
+            .map(x => relative(compilerOptions.rootDir || process.cwd(), x))
+            .join(' -> '))
+      }
     }
-    else {
-      super.visitNode(node)
-    }
-
-  }
-
-  visitExportDeclaration(node: ts.ExportDeclaration) {
-    this.visitImportOrExportDeclaration(node)
-  }
-
-  visitImportDeclaration(node: ts.ImportDeclaration) {
-    this.visitImportOrExportDeclaration(node)
-    super.visitImportDeclaration(node)
   }
 
   visitImportOrExportDeclaration(node: ts.ImportDeclaration | ts.ExportDeclaration) {
@@ -87,57 +105,55 @@ class NoCircularImportsWalker extends Lint.RuleWalker {
       return
     }
 
-    this.addToGraph(fileName, resolvedImportFileName)
-
-    // Check for cycles, remove any cycles that have been found already (otherwise we'll report
-    // false positive on every files that import from the real cycles, and users will be driven
-    // mad).
-    const maybeCycle = this.getCycle(fileName, resolvedImportFileName)
-    if (maybeCycle.length > 0) {
-      // Slice the array so we don't match this file twice.
-      if (maybeCycle.slice(1).some(fn => found.has(fn))) {
-        return
-      }
-
-      maybeCycle.forEach(x => found.add(x))
-
-      this.addFailureAt(
-        node.getStart(),
-        node.getWidth(),
-        `${Rule.FAILURE_STRING}: ${
-          maybeCycle
-            .concat(fileName)
-            // Show relative to baseUrl (or the tsconfig path itself).
-            .map(x => relative(compilerOptions.rootDir || process.cwd(), x))
-            .join(' -> ')
-        }`)
-    }
+    this.addToGraph(fileName, resolvedImportFileName, node)
   }
 
-  private addToGraph(thisFileName: string, importCanonicalName: string) {
+  private addToGraph(thisFileName: string, importCanonicalName: string, node: ts.Node) {
     let i = imports.get(thisFileName)
     if (!i) {
-      imports.set(thisFileName, i = new Set)
+      imports.set(thisFileName, i = new Map)
     }
-    i.add(importCanonicalName)
+    i.set(importCanonicalName, node)
   }
 
-  private getCycle(moduleName: string, startFromImportName?: string | undefined, accumulator: string[] = []): string[] {
+  private checkCycle(moduleName: string): boolean {
+    const accumulator = new Set<string>()
+
+    const moduleImport = imports.get(moduleName)
+    if (!moduleImport)
+      return false
+
+    const toCheck = Array.from(moduleImport.keys())
+    for (let i = 0; i < toCheck.length; i++) {
+      const current = toCheck[i]
+      if (current == moduleName) {
+        return true
+      }
+      accumulator.add(current)
+
+      toCheck.push(
+        ...Array.from((imports.get(current) || new Map).keys())
+                .filter(i => !accumulator.has(i))
+      )
+    }
+
+    return false
+  }
+
+  private getAllCycles(moduleName: string, accumulator: string[] = []): string[][] {
     const moduleImport = imports.get(moduleName)
     if (!moduleImport) return []
-    if (accumulator.indexOf(moduleName) !== -1) return accumulator
+    if (accumulator.indexOf(moduleName) !== -1)
+      return [accumulator]
 
-    if(startFromImportName !== undefined && imports.has(startFromImportName)) {
-      const c = this.getCycle(startFromImportName, undefined, accumulator.concat(moduleName))
-      if(c.length) return c
-    }
-    else {
-      for (const imp of Array.from(moduleImport.values())) {
-        const c = this.getCycle(imp, undefined, accumulator.concat(moduleName))
-        if(c.length) return c
-      }
+    const all: string[][] = []
+    for (const imp of Array.from(moduleImport.keys())) {
+      const c = this.getAllCycles(imp, accumulator.concat(moduleName))
+
+      if (c.length)
+        all.push(...c)
     }
 
-    return []
+    return all
   }
 }

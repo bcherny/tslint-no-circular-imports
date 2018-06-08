@@ -17,30 +17,30 @@ exec(`${tslintBin} -p ${tsconfig} -c ${tslintConfig} -r .. -t ${tslintFormat} ${
   assert.deepEqual(actual, [
     // case1
     {
-      failure: 'circular import detected: case1.ts -> case1.1.ts -> case1.ts',
+      failure: 'circular import detected: case1.ts -> case1.2.ts -> case1.ts',
       name: join(__dirname, 'case1.ts')
     },
     {
-      failure: 'circular import detected: case1.ts -> case1.2.ts -> case1.ts',
-      name: join(__dirname, 'case1.ts')
+      failure: 'circular import detected: case1.1.ts -> case1.ts -> case1.1.ts',
+      name: join(__dirname, 'case1.1.ts')
     },
 
     // case2
     {
-      failure: 'circular import detected: case2/b.ts -> case2/a.ts -> case2/b.ts',
-      name: join(__dirname, 'case2/b.ts')
+      failure: 'circular import detected: case2/a.ts -> case2/b.ts -> case2/a.ts',
+      name: join(__dirname, 'case2/a.ts')
     },
 
     // case3
     {
-      failure: 'circular import detected: case3/b.ts -> case3/a.ts -> case3/b.ts',
-      name: join(__dirname, 'case3/b.ts')
+      failure: 'circular import detected: case3/a.ts -> case3/b.ts -> case3/a.ts',
+      name: join(__dirname, 'case3/a.ts')
     },
 
     // case4
     {
-      failure: 'circular import detected: case4/index.ts -> case4/a.ts -> case4/index.ts',
-      name: join(__dirname, 'case4/index.ts')
+      failure: 'circular import detected: case4/a.ts -> case4/index.ts -> case4/a.ts',
+      name: join(__dirname, 'case4/a.ts')
     }
   ])
 })
