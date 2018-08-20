@@ -1,0 +1,1 @@
+import * as two from "./two";
