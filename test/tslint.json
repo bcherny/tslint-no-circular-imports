@@ -1,6 +1,8 @@
 {
   "rulesDirectory": ["../"],
   "rules": {
-    "no-circular-imports": true
+    "no-circular-imports": [true, {
+      "search-depth-limit": 3
+    }]
   }
 }

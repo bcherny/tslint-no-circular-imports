@@ -8,7 +8,15 @@ interface Options {
 
    /** @internal */
   rootDir: string
+
+  /**
+   * Maximum search depth to check for in generating a list of all cycles.
+   */
+  searchDepthLimit: number
 }
+
+const OPTION_SEARCH_DEPTH_LIMIT = "search-depth-limit"
+const OPTION_SEARCH_DEPTH_LIMIT_DEFAULT = 50
 
 export class Rule extends Lint.Rules.TypedRule {
   static FAILURE_STRING = 'circular import detected'
@@ -18,9 +26,23 @@ export class Rule extends Lint.Rules.TypedRule {
     description: 'Disallows circular imports.',
     rationale: Lint.Utils.dedent`
         Circular dependencies cause hard-to-catch runtime exceptions.`,
-    optionsDescription: 'Not configurable.',
-    options: null,
-    optionExamples: ['true'],
+    optionsDescription: Lint.Utils.dedent`
+      A single argument, ${OPTION_SEARCH_DEPTH_LIMIT}, may be provided, and defaults to ${OPTION_SEARCH_DEPTH_LIMIT_DEFAULT}.
+      It limits the depth of cycle reporting to a fixed size limit for a list of files.
+      This helps improve performance, as most cycles do not surpass a few related files.
+    `,
+    options: {
+      properties: {
+        [OPTION_SEARCH_DEPTH_LIMIT]: {
+          type: "number"
+        }
+      },
+      type: "object"
+    },
+    optionExamples: [
+      ['true'],
+      ['true', { [OPTION_SEARCH_DEPTH_LIMIT]: 50 }]
+    ],
     type: 'functionality',
     typescriptOnly: false
   }
@@ -37,6 +59,7 @@ export class Rule extends Lint.Rules.TypedRule {
       {
         compilerOptions,
         rootDir: compilerOptions.rootDir || process.cwd(),
+        searchDepthLimit: this.ruleArguments[0]["search-depth-limit"] || OPTION_SEARCH_DEPTH_LIMIT
       },
       program.getTypeChecker())
   }
@@ -113,6 +136,26 @@ function walk(context: Lint.WalkContext<Options>) {
 
     addToGraph(fileName, resolvedImportFileName, node)
   }
+
+  function getAllCycles(moduleName: string, accumulator: string[] = [], iterationDepth = 0): string[][] {
+    const moduleImport = imports.get(moduleName)
+    if (!moduleImport) return []
+    if (accumulator.indexOf(moduleName) !== -1)
+      return [accumulator]
+
+    if (iterationDepth >= context.options.searchDepthLimit)
+      return []
+
+    const all: string[][] = []
+    for (const imp of Array.from(moduleImport.keys())) {
+      const c = getAllCycles(imp, accumulator.concat(moduleName), iterationDepth + 1)
+
+      if (c.length)
+        all.push(...c)
+    }
+
+    return all
+  }
 }
 
 function addToGraph(thisFileName: string, importCanonicalName: string, node: ts.Node) {
@@ -145,21 +188,4 @@ function checkCycle(moduleName: string): boolean {
   }
 
   return false
-}
-
-function getAllCycles(moduleName: string, accumulator: string[] = []): string[][] {
-  const moduleImport = imports.get(moduleName)
-  if (!moduleImport) return []
-  if (accumulator.indexOf(moduleName) !== -1)
-    return [accumulator]
-
-  const all: string[][] = []
-  for (const imp of Array.from(moduleImport.keys())) {
-    const c = getAllCycles(imp, accumulator.concat(moduleName))
-
-    if (c.length)
-      all.push(...c)
-  }
-
-  return all
 }
