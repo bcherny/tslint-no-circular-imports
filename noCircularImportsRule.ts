@@ -1,7 +1,22 @@
 import { relative, sep } from 'path';
 import * as Lint from 'tslint';
-import { IOptions } from 'tslint/lib/language/rule/rule';
 import * as ts from 'typescript';
+
+interface Options {
+  /** @internal */
+  compilerOptions: ts.CompilerOptions
+
+  /** @internal */
+  rootDir: string
+
+  /**
+   * Maximum search depth to check for in generating a list of all cycles.
+   */
+  searchDepthLimit: number
+}
+
+const OPTION_SEARCH_DEPTH_LIMIT = "search-depth-limit"
+const OPTION_SEARCH_DEPTH_LIMIT_DEFAULT = 50
 
 export class Rule extends Lint.Rules.TypedRule {
   static FAILURE_STRING = 'circular import detected'
@@ -11,9 +26,23 @@ export class Rule extends Lint.Rules.TypedRule {
     description: 'Disallows circular imports.',
     rationale: Lint.Utils.dedent`
         Circular dependencies cause hard-to-catch runtime exceptions.`,
-    optionsDescription: 'Not configurable.',
-    options: null,
-    optionExamples: ['true'],
+    optionsDescription: Lint.Utils.dedent`
+      A single argument, ${OPTION_SEARCH_DEPTH_LIMIT}, may be provided, and defaults to ${OPTION_SEARCH_DEPTH_LIMIT_DEFAULT}.
+      It limits the depth of cycle reporting to a fixed size limit for a list of files.
+      This helps improve performance, as most cycles do not surpass a few related files.
+    `,
+    options: {
+      properties: {
+        [OPTION_SEARCH_DEPTH_LIMIT]: {
+          type: "number"
+        }
+      },
+      type: "object"
+    },
+    optionExamples: [
+      ['true'],
+      ['true', { [OPTION_SEARCH_DEPTH_LIMIT]: 50 }]
+    ],
     type: 'functionality',
     typescriptOnly: false
   }
@@ -22,9 +51,17 @@ export class Rule extends Lint.Rules.TypedRule {
     const resolvedFile = sourceFile.fileName
     imports.delete(resolvedFile)
 
-    const walker = new NoCircularImportsWalker(sourceFile, this.getOptions(), program)
+    const compilerOptions = program.getCompilerOptions()
 
-    return this.applyWithWalker(walker)
+    return this.applyWithFunction(
+      sourceFile,
+      walk,
+      {
+        compilerOptions,
+        rootDir: compilerOptions.rootDir || process.cwd(),
+        searchDepthLimit: this.ruleArguments[0]["search-depth-limit"] || OPTION_SEARCH_DEPTH_LIMIT
+      },
+      program.getTypeChecker())
   }
 }
 
@@ -34,51 +71,44 @@ const imports = new Map<string, Map<string, ts.Node>>()
 const found = new Set<string>()
 const nodeModulesRe = new RegExp(`\\${sep}node_modules\\${sep}`)
 
-class NoCircularImportsWalker extends Lint.RuleWalker {
-  constructor(sourceFile: ts.SourceFile, options: IOptions, private program: ts.Program) {
-    super(sourceFile, options)
-  }
+function walk(context: Lint.WalkContext<Options>) {
+  // Instead of visiting all children, this is faster. We know imports are statements anyway.
+  context.sourceFile.statements.forEach(statement => {
+    // export declarations seem to be missing from the current SyntaxWalker
+    if (ts.isExportDeclaration(statement)) {
+        visitImportOrExportDeclaration(statement)
+    }
+    else if (ts.isImportDeclaration(statement)) {
+        visitImportOrExportDeclaration(statement)
+    }
+  })
 
-  visitSourceFile(sourceFile: ts.SourceFile) {
-    // Instead of visiting all children, this is faster. We know imports are statements anyway.
-    sourceFile.statements.forEach(statement => {
-      // export declarations seem to be missing from the current SyntaxWalker
-      if (ts.isExportDeclaration(statement)) {
-          this.visitImportOrExportDeclaration(statement)
+  const fileName = context.sourceFile.fileName
+
+  // Check for cycles, remove any cycles that have been found already (otherwise we'll report
+  // false positive on every files that import from the real cycles, and users will be driven
+  // mad).
+  // The checkCycle is many order of magnitude faster than getCycle, but does not keep a history
+  // of the cycle itself. Only get the full cycle if we found one.
+  if (checkCycle(fileName)) {
+    const allCycles = getAllCycles(fileName)
+
+    for (const maybeCycle of allCycles) {
+      // Slice the array so we don't match this file twice.
+      if (maybeCycle.slice(1, -1).some(fileName => found.has(fileName))) {
+          continue
       }
-      else if (ts.isImportDeclaration(statement)) {
-          this.visitImportOrExportDeclaration(statement)
-      }
-    })
+      maybeCycle.forEach(x => found.add(x))
+      const node = imports.get(fileName) !.get(maybeCycle[1]) !
 
-    const fileName = sourceFile.fileName
-
-    // Check for cycles, remove any cycles that have been found already (otherwise we'll report
-    // false positive on every files that import from the real cycles, and users will be driven
-    // mad).
-    // The checkCycle is many order of magnitude faster than getCycle, but does not keep a history
-    // of the cycle itself. Only get the full cycle if we found one.
-    if (this.checkCycle(fileName)) {
-      const allCycles = this.getAllCycles(fileName)
-
-      for (const maybeCycle of allCycles) {
-        // Slice the array so we don't match this file twice.
-        if (maybeCycle.slice(1, -1).some(fileName => found.has(fileName))) {
-            continue
-        }
-        maybeCycle.forEach(x => found.add(x))
-        const node = imports.get(fileName) !.get(maybeCycle[1]) !
-
-        const compilerOptions = this.program.getCompilerOptions()
-        this.addFailureAt(node.getStart(), node.getWidth(), Rule.FAILURE_STRING + ": " + maybeCycle
-            .concat(fileName)
-            .map(x => relative(compilerOptions.rootDir || process.cwd(), x))
-            .join(' -> '))
-      }
+      context.addFailureAt(node.getStart(), node.getWidth(), Rule.FAILURE_STRING + ": " + maybeCycle
+          .concat(fileName)
+          .map(x => relative(context.options.rootDir, x))
+          .join(' -> '))
     }
   }
 
-  visitImportOrExportDeclaration(node: ts.ImportDeclaration | ts.ExportDeclaration) {
+  function visitImportOrExportDeclaration(node: ts.ImportDeclaration | ts.ExportDeclaration) {
     if (!node.parent || !ts.isSourceFile(node.parent)) {
       return
     }
@@ -91,9 +121,8 @@ class NoCircularImportsWalker extends Lint.RuleWalker {
       return
     }
     const importFileName = node.moduleSpecifier.text
-    const compilerOptions = this.program.getCompilerOptions()
 
-    const resolved = ts.resolveModuleName(importFileName, fileName, compilerOptions, ts.sys)
+    const resolved = ts.resolveModuleName(importFileName, fileName, context.options.compilerOptions, ts.sys)
     if (!resolved || !resolved.resolvedModule) {
       return
     }
@@ -105,10 +134,10 @@ class NoCircularImportsWalker extends Lint.RuleWalker {
       return
     }
 
-    this.addToGraph(fileName, resolvedImportFileName, node)
+    addToGraph(fileName, resolvedImportFileName, node)
   }
-
-  private addToGraph(thisFileName: string, importCanonicalName: string, node: ts.Node) {
+  
+  function addToGraph(thisFileName: string, importCanonicalName: string, node: ts.Node) {
     let i = imports.get(thisFileName)
     if (!i) {
       imports.set(thisFileName, i = new Map)
@@ -116,7 +145,7 @@ class NoCircularImportsWalker extends Lint.RuleWalker {
     i.set(importCanonicalName, node)
   }
 
-  private checkCycle(moduleName: string): boolean {
+  function checkCycle(moduleName: string): boolean {
     const accumulator = new Set<string>()
 
     const moduleImport = imports.get(moduleName)
@@ -140,15 +169,18 @@ class NoCircularImportsWalker extends Lint.RuleWalker {
     return false
   }
 
-  private getAllCycles(moduleName: string, accumulator: string[] = []): string[][] {
+  function getAllCycles(moduleName: string, accumulator: string[] = [], iterationDepth = 0): string[][] {
     const moduleImport = imports.get(moduleName)
     if (!moduleImport) return []
     if (accumulator.indexOf(moduleName) !== -1)
       return [accumulator]
 
+    if (iterationDepth >= context.options.searchDepthLimit)
+      return []
+
     const all: string[][] = []
     for (const imp of Array.from(moduleImport.keys())) {
-      const c = this.getAllCycles(imp, accumulator.concat(moduleName))
+      const c = getAllCycles(imp, accumulator.concat(moduleName), iterationDepth + 1)
 
       if (c.length)
         all.push(...c)
