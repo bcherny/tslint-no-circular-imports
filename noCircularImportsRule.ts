@@ -1,6 +1,6 @@
-import { relative, sep } from 'path';
-import * as Lint from 'tslint';
-import * as ts from 'typescript';
+import { relative, sep } from 'path'
+import * as Lint from 'tslint'
+import * as ts from 'typescript'
 
 interface Options {
   /** @internal */
@@ -36,7 +36,7 @@ export class Rule extends Lint.Rules.TypedRule {
       walk,
       {
         compilerOptions,
-        rootDir: compilerOptions.rootDir || process.cwd(),
+        rootDir: compilerOptions.rootDir || process.cwd()
       },
       program.getTypeChecker())
   }
@@ -54,8 +54,7 @@ function walk(context: Lint.WalkContext<Options>) {
     // export declarations seem to be missing from the current SyntaxWalker
     if (ts.isExportDeclaration(statement)) {
         visitImportOrExportDeclaration(statement)
-    }
-    else if (ts.isImportDeclaration(statement)) {
+    } else if (ts.isImportDeclaration(statement)) {
         visitImportOrExportDeclaration(statement)
     }
   })
@@ -78,18 +77,18 @@ function walk(context: Lint.WalkContext<Options>) {
       maybeCycle.forEach(x => found.add(x))
       const node = imports.get(fileName) !.get(maybeCycle[1]) !
 
-      context.addFailureAt(node.getStart(), node.getWidth(), Rule.FAILURE_STRING + ": " + maybeCycle
+      context.addFailureAt(node.getStart(), node.getWidth(), Rule.FAILURE_STRING + ': ' + maybeCycle
           .concat(fileName)
           .map(x => relative(context.options.rootDir, x))
           .join(' -> '))
     }
   }
-  
+
   function visitImportOrExportDeclaration(node: ts.ImportDeclaration | ts.ExportDeclaration) {
     if (!node.parent || !ts.isSourceFile(node.parent)) {
       return
     }
-    if(!node.moduleSpecifier) {
+    if (!node.moduleSpecifier) {
       return
     }
     const fileName = node.parent.fileName
@@ -133,7 +132,7 @@ function checkCycle(moduleName: string): boolean {
   const toCheck = Array.from(moduleImport.keys())
   for (let i = 0; i < toCheck.length; i++) {
     const current = toCheck[i]
-    if (current == moduleName) {
+    if (current === moduleName) {
       return true
     }
     accumulator.add(current)
