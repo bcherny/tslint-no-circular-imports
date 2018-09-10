@@ -52,6 +52,7 @@ export class Rule extends Lint.Rules.TypedRule {
     imports.delete(resolvedFile)
 
     const compilerOptions = program.getCompilerOptions()
+    const ruleArguments = this.ruleArguments[0] || {}
 
     return this.applyWithFunction(
       sourceFile,
@@ -59,7 +60,7 @@ export class Rule extends Lint.Rules.TypedRule {
       {
         compilerOptions,
         rootDir: compilerOptions.rootDir || process.cwd(),
-        searchDepthLimit: this.ruleArguments[0]['search-depth-limit'] || OPTION_SEARCH_DEPTH_LIMIT
+        searchDepthLimit: ruleArguments['search-depth-limit'] || OPTION_SEARCH_DEPTH_LIMIT
       },
       program.getTypeChecker())
   }
