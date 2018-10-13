@@ -1,6 +1,8 @@
 import { relative, sep } from 'path'
 import * as Lint from 'tslint'
 import * as ts from 'typescript'
+// tslint:disable-next-line:no-var-requires
+const slash = require('slash')
 
 interface Options {
   /** @internal */
@@ -103,7 +105,7 @@ function walk(context: Lint.WalkContext<Options>) {
 
       context.addFailureAt(node.getStart(), node.getWidth(), Rule.FAILURE_STRING + ': ' + maybeCycle
           .concat(fileName)
-          .map(x => relative(context.options.rootDir, x))
+          .map(x => slash(relative(context.options.rootDir, x)))
           .join(' -> '))
     }
   }
