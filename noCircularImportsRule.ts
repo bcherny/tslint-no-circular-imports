@@ -43,7 +43,7 @@ export class Rule extends Lint.Rules.TypedRule {
     },
     optionExamples: [
       ['true'],
-      ['true', { [OPTION_SEARCH_DEPTH_LIMIT]: 50 }]
+      ['true', { [OPTION_SEARCH_DEPTH_LIMIT]: OPTION_SEARCH_DEPTH_LIMIT_DEFAULT }]
     ],
     type: 'functionality',
     typescriptOnly: false
