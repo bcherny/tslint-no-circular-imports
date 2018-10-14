@@ -10,7 +10,7 @@ const tslintFormat = 'json'
 const tsFiles = './**/*.ts';
 const tsconfig = join('.', 'tsconfig.json');
 
-exec(`${tslintBin} -p ${tsconfig} -c ${tslintConfig} -r .. -t ${tslintFormat} ${tsFiles}`, { cwd: __dirname }, (error, stdout, stderr) => {
+exec(`${tslintBin} -p ${tsconfig} -c ${tslintConfig} -r .. -t ${tslintFormat} "${tsFiles}"`, { cwd: __dirname }, (error, stdout, stderr) => {
   // Only validate failures and names.
   const actual = (JSON.parse(stdout) as Lint.IRuleFailureJson[])
       .map(x => ({ failure: x.failure, name: x.name }))
