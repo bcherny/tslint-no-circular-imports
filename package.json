@@ -26,6 +26,7 @@
   },
   "devDependencies": {
     "@types/node": "^11.10.4",
+    "@types/slash": "^2.0.0",
     "tslint": "^5.13.1",
     "typescript": "^3.3.3333"
   },

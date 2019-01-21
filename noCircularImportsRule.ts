@@ -1,8 +1,7 @@
 import { relative, sep } from 'path'
+import slash = require('slash')
 import * as Lint from 'tslint'
 import * as ts from 'typescript'
-// tslint:disable-next-line:no-var-requires
-const slash = require('slash')
 
 interface Options {
   /** @internal */
