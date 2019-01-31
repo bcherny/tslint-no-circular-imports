@@ -153,8 +153,8 @@ function walk(context: Lint.WalkContext<Options>) {
     for (const imp of Array.from(moduleImport.keys())) {
       const c = getAllCycles(imp, accumulator.concat(moduleName), iterationDepth + 1)
 
-      if (c.length)
-        all.push(...c)
+      for (const cycle of c)
+        all.push(cycle)
     }
 
     return all
