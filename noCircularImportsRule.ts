@@ -115,6 +115,9 @@ function walk(context: Lint.WalkContext<Options>) {
     if (!node.moduleSpecifier) {
       return
     }
+    if (!ts.isSourceFile(node.parent)) {
+      return
+    }
     const fileName = node.parent.fileName
 
     if (!ts.isStringLiteral(node.moduleSpecifier)) {
