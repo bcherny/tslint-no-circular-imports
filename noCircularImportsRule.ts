@@ -119,6 +119,9 @@ function walk(context: Lint.WalkContext<Options>) {
       return
     }
     const fileName = node.parent.fileName
+    if(fileName.endsWith('.d.ts')) {
+      return
+    }
 
     if (!ts.isStringLiteral(node.moduleSpecifier)) {
       return
