@@ -34,6 +34,16 @@ Circular import detected: foo.ts -> bar.ts -> foo.ts
 Circular import detected: baz.ts -> bar.ts -> baz.ts
 ```
 
+Note, if you wish to have circular references reported as
+a warning, rather than as an error, then add this to your tslint.json:
+
+```json
+{
+  "rules": {
+    "no-circular-imports": { "severity": "warn" }
+  }
+}
+```
 ## Running the tests
 
 ```sh
