@@ -12,11 +12,17 @@ interface Options {
   /**
    * Maximum search depth to check for in generating a list of all cycles.
    */
-  searchDepthLimit: number
+  searchDepthLimit: number,
+
+  /**
+   * Include or ignore circular imports caused by interfaces and type aliases
+   */
+  ignoreTypeImports: boolean,
 }
 
 const OPTION_SEARCH_DEPTH_LIMIT = 'search-depth-limit'
 const OPTION_SEARCH_DEPTH_LIMIT_DEFAULT = 50
+const OPTION_IGNORE_TYPE_IMPORTS = true
 
 export class Rule extends Lint.Rules.TypedRule {
   static FAILURE_STRING = 'circular import detected'
@@ -60,7 +66,10 @@ export class Rule extends Lint.Rules.TypedRule {
       {
         compilerOptions,
         rootDir: compilerOptions.rootDir || process.cwd(),
-        searchDepthLimit: ruleArguments['search-depth-limit'] || OPTION_SEARCH_DEPTH_LIMIT
+        searchDepthLimit: ruleArguments['search-depth-limit'] || OPTION_SEARCH_DEPTH_LIMIT,
+        ignoreTypeImports: ruleArguments['ignore-type-imports'] !== undefined
+            ? ruleArguments['ignore-type-imports']
+            : OPTION_IGNORE_TYPE_IMPORTS
       },
       program.getTypeChecker())
   }
@@ -72,14 +81,14 @@ const imports = new Map<string, Map<string, ts.Node>>()
 const found = new Set<string>()
 const nodeModulesRe = new RegExp(`\\${sep}node_modules\\${sep}`)
 
-function walk(context: Lint.WalkContext<Options>) {
+function walk(context: Lint.WalkContext<Options>, tc: ts.TypeChecker) {
   // Instead of visiting all children, this is faster. We know imports are statements anyway.
   context.sourceFile.statements.forEach(statement => {
     // export declarations seem to be missing from the current SyntaxWalker
     if (ts.isExportDeclaration(statement)) {
-        visitImportOrExportDeclaration(statement)
+        visitImportOrExportDeclaration(statement, tc)
     } else if (ts.isImportDeclaration(statement)) {
-        visitImportOrExportDeclaration(statement)
+        visitImportOrExportDeclaration(statement, tc)
     }
   })
 
@@ -108,7 +117,7 @@ function walk(context: Lint.WalkContext<Options>) {
     }
   }
 
-  function visitImportOrExportDeclaration(node: ts.ImportDeclaration | ts.ExportDeclaration) {
+  function visitImportOrExportDeclaration(node: ts.ImportDeclaration | ts.ExportDeclaration, tc: ts.TypeChecker) {
     if (!node.parent || !ts.isSourceFile(node.parent)) {
       return
     }
@@ -137,6 +146,12 @@ function walk(context: Lint.WalkContext<Options>) {
     // Skip node modules entirely. We use this after resolution to support path mapping in the
     // tsconfig.json (which could override imports from/to node_modules).
     if (nodeModulesRe.test(resolvedImportFileName)) {
+      return
+    }
+
+    if (context.options.ignoreTypeImports
+        && ts.isImportDeclaration(node)
+        && isInterfaceOrTypeAliasImported(node, tc)) {
       return
     }
 
@@ -191,6 +206,40 @@ function checkCycle(moduleName: string): boolean {
       ...Array.from((imports.get(current) || new Map).keys())
               .filter(i => !accumulator.has(i))
     )
+  }
+
+  return false
+}
+
+function isInterfaceOrTypeAliasImported(node: ts.ImportDeclaration, tc: ts.TypeChecker): boolean {
+  if (node.importClause === undefined) {
+    return false
+  }
+
+  if (node.importClause.name !== undefined) {
+    return checkImportKind(node.importClause.name, tc)
+  } else if (node.importClause.namedBindings !== undefined && !ts.isNamespaceImport(node.importClause.namedBindings)) {
+    // Check if all imports are interfaces and types, and if so, return true
+    return node.importClause.namedBindings.elements.map(binding => {
+      return checkImportKind(binding.name, tc)
+    }).every(isTypeDeclaration => isTypeDeclaration === true)
+  }
+
+  return false
+}
+
+function checkImportKind(name: ts.Identifier, tc: ts.TypeChecker): boolean {
+  const symbol = tc.getSymbolAtLocation(name)
+
+  if (symbol === undefined) {
+    return false
+  }
+
+  const { declarations } = tc.getAliasedSymbol(symbol)
+
+  if (declarations !== undefined && declarations.length !== 0) {
+    const declaration = declarations[0]
+    return ts.isInterfaceDeclaration(declaration) || ts.isTypeAliasDeclaration(declaration)
   }
 
   return false
