@@ -13,10 +13,18 @@ interface Options {
    * Maximum search depth to check for in generating a list of all cycles.
    */
   searchDepthLimit: number
+
+  /**
+   * Maximum search depth to check for in generating a list of all cycles.
+   */
+  cyclesPerFileLimit: number
 }
 
 const OPTION_SEARCH_DEPTH_LIMIT = 'search-depth-limit'
 const OPTION_SEARCH_DEPTH_LIMIT_DEFAULT = 50
+
+const OPTION_CYCLES_PER_FILE_LIMIT = 'errors-per-file-limit'
+const OPTION_CYCLES_PER_FILE_LIMIT_DEFAULT = 100000
 
 export class Rule extends Lint.Rules.TypedRule {
   static FAILURE_STRING = 'circular import detected'
@@ -26,14 +34,22 @@ export class Rule extends Lint.Rules.TypedRule {
     description: 'Disallows circular imports.',
     rationale: Lint.Utils.dedent`
         Circular dependencies cause hard-to-catch runtime exceptions.`,
+
     optionsDescription: Lint.Utils.dedent`
-      A single argument, ${OPTION_SEARCH_DEPTH_LIMIT}, may be provided, and defaults to ${OPTION_SEARCH_DEPTH_LIMIT_DEFAULT}.
+      ${OPTION_SEARCH_DEPTH_LIMIT}, may be provided, and defaults to ${OPTION_SEARCH_DEPTH_LIMIT_DEFAULT}.
       It limits the depth of cycle reporting to a fixed size limit for a list of files.
       This helps improve performance, as most cycles do not surpass a few related files.
+
+      Another argument ${OPTION_CYCLES_PER_FILE_LIMIT} (default ${OPTION_CYCLES_PER_FILE_LIMIT_DEFAULT})
+      helps preventing memory overflows as number of cycles in heavily interconnected groups of modules
+      grows exponentially.
     `,
     options: {
       properties: {
         [OPTION_SEARCH_DEPTH_LIMIT]: {
+          type: 'number'
+        },
+        [OPTION_CYCLES_PER_FILE_LIMIT]: {
           type: 'number'
         }
       },
@@ -41,7 +57,8 @@ export class Rule extends Lint.Rules.TypedRule {
     },
     optionExamples: [
       ['true'],
-      ['true', { [OPTION_SEARCH_DEPTH_LIMIT]: 50 }]
+      ['true', { [OPTION_SEARCH_DEPTH_LIMIT]: 50 }],
+      ['true', { [OPTION_CYCLES_PER_FILE_LIMIT]: OPTION_CYCLES_PER_FILE_LIMIT_DEFAULT }]
     ],
     type: 'functionality',
     typescriptOnly: false
@@ -60,7 +77,8 @@ export class Rule extends Lint.Rules.TypedRule {
       {
         compilerOptions,
         rootDir: compilerOptions.rootDir || process.cwd(),
-        searchDepthLimit: ruleArguments['search-depth-limit'] || OPTION_SEARCH_DEPTH_LIMIT
+        searchDepthLimit: ruleArguments['search-depth-limit'] || OPTION_SEARCH_DEPTH_LIMIT,
+        cyclesPerFileLimit: ruleArguments[OPTION_CYCLES_PER_FILE_LIMIT] || OPTION_CYCLES_PER_FILE_LIMIT_DEFAULT
       },
       program.getTypeChecker())
   }
@@ -84,6 +102,7 @@ function walk(context: Lint.WalkContext<Options>) {
   })
 
   const fileName = context.sourceFile.fileName
+  let foundCycles = 0
 
   // Check for cycles, remove any cycles that have been found already (otherwise we'll report
   // false positive on every files that import from the real cycles, and users will be driven
@@ -105,6 +124,11 @@ function walk(context: Lint.WalkContext<Options>) {
           .concat(fileName)
           .map(x => relative(context.options.rootDir, x))
           .join(' -> '))
+    }
+
+    if (foundCycles > context.options.cyclesPerFileLimit) {
+      const node = imports.get(fileName) !.get(allCycles[0][1]) !
+      context.addFailureAtNode(node, 'Too complex circular structure, some cycles might have been omitted')
     }
   }
 
@@ -144,10 +168,15 @@ function walk(context: Lint.WalkContext<Options>) {
   }
 
   function getAllCycles(moduleName: string, accumulator: string[] = [], iterationDepth = 0): string[][] {
+    if (foundCycles > context.options.cyclesPerFileLimit) {
+      return []
+    }
     const moduleImport = imports.get(moduleName)
     if (!moduleImport) return []
-    if (accumulator.indexOf(moduleName) !== -1)
+    if (accumulator.indexOf(moduleName) !== -1) {
+      foundCycles++
       return [accumulator]
+    }
 
     if (iterationDepth >= context.options.searchDepthLimit)
       return []
@@ -158,6 +187,10 @@ function walk(context: Lint.WalkContext<Options>) {
 
       for (const cycle of c)
         all.push(cycle)
+
+      if (foundCycles > context.options.cyclesPerFileLimit) {
+        break
+      }
     }
 
     return all
