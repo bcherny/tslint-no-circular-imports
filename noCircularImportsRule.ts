@@ -1,4 +1,5 @@
 import { relative, sep } from 'path'
+import slash = require('slash')
 import * as Lint from 'tslint'
 import * as ts from 'typescript'
 
@@ -41,7 +42,7 @@ export class Rule extends Lint.Rules.TypedRule {
     },
     optionExamples: [
       ['true'],
-      ['true', { [OPTION_SEARCH_DEPTH_LIMIT]: 50 }]
+      ['true', { [OPTION_SEARCH_DEPTH_LIMIT]: OPTION_SEARCH_DEPTH_LIMIT_DEFAULT }]
     ],
     type: 'functionality',
     typescriptOnly: false
@@ -103,7 +104,7 @@ function walk(context: Lint.WalkContext<Options>) {
 
       context.addFailureAt(node.getStart(), node.getWidth(), Rule.FAILURE_STRING + ': ' + maybeCycle
           .concat(fileName)
-          .map(x => relative(context.options.rootDir, x))
+          .map(x => slash(relative(context.options.rootDir, x)))
           .join(' -> '))
     }
   }
